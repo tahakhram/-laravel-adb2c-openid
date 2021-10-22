@@ -18,13 +18,13 @@
   ],
   "autoload": {
       "psr-4": {
-          "TahaKhram\\LaravelAzureB2C\\": "src/"
+          "TahaKhram\\LaravelAdb2cOpenid\\": "src/"
       }
   },
   "extra": {
       "laravel": {
           "providers": [
-              "TahaKhram\\LaravelAzureB2C\\AdB2CServiceProvider"
+              "TahaKhram\\LaravelAdb2cOpenid\\AdB2CServiceProvider"
           ]
       }
   }
