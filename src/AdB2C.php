@@ -11,15 +11,21 @@ use GuzzleHttp\Exception\RequestException;
 
 use Auth;
 use TahaKhram\LaravelAdb2cOpenid\EndPointHandler;
+use TahaKhram\LaravelAdb2cOpenid\TokenChecker;
+use Illuminate\Support\Facades\Hash;
 
-class Azure
+class AdB2C
 {
-    protected $login_route = "/login";
 
-    protected $baseUrl = "https://login.microsoftonline.com/";
+    // protected $route2 = "/oauth2/v2.0/";
+    // protected $route = "/oauth2/";
 
-    protected $route2 = "/oauth2/v2.0/";
-    protected $route = "/oauth2/";
+    public function __construct()
+    {
+        $this->login_route = config('azure.login_azure');
+        $this->baseUrl = config('azure.endpoint_begin');
+        $this->generic_policy = config('azure.generic_policy');
+    }
 
     /**
      * Handle an incoming request
@@ -29,48 +35,48 @@ class Azure
      * @return \Illuminate\Http\RedirectResponse|\Illuminate\Routing\Redirector|mixed
      * @throws \Exception
      */
-    public function handle($request, Closure $next)
-    {
-        $access_token = $request->session()->get('_th_azure_access_token');
-        $refresh_token = $request->session()->get('_th_azure_refresh_token');
+    // public function handle($request, Closure $next)
+    // {
+    //     $access_token = $request->session()->get('_th_azure_access_token');
+    //     $refresh_token = $request->session()->get('_th_azure_refresh_token');
 
-        if (config('app.env') === "testing")
-        {
-            return $this->handleTesting($request, $next, $access_token, $refresh_token);
-        }
+    //     if (config('app.env') === "testing")
+    //     {
+    //         return $this->handleTesting($request, $next, $access_token, $refresh_token);
+    //     }
 
-        if (!$access_token || !$refresh_token)
-        {
-            return $this->redirect($request);
-        }
+    //     if (!$access_token || !$refresh_token)
+    //     {
+    //         return $this->redirect($request);
+    //     }
 
-        $client = new Client();
+    //     $client = new Client();
 
-        try {
-            $response = $client->request('POST', $this->baseUrl . config('azure.tenant_id') . $this->route . "token", [
-                'form_params' => [
-                    'grant_type' => 'refresh_token',
-                    'client_id' => config('azure.client.id'),
-                    'client_secret' => config('azure.client.secret'),
-                    'refresh_token' => $refresh_token,
-                    'resource' => config('azure.resource'),
-                ]
-            ]);
+    //     try {
+    //         $response = $client->request('POST', $this->baseUrl . config('azure.tenant_id') . $this->route . "token", [
+    //             'form_params' => [
+    //                 'grant_type' => 'refresh_token',
+    //                 'client_id' => config('azure.client.id'),
+    //                 'client_secret' => config('azure.client.secret'),
+    //                 'refresh_token' => $refresh_token,
+    //                 'resource' => config('azure.resource'),
+    //             ]
+    //         ]);
 
-            $contents = json_decode($response->getBody()->getContents());
-        } catch(RequestException $e) {
-            $this->fail($request, $e);
-        }
+    //         $contents = json_decode($response->getBody()->getContents());
+    //     } catch(RequestException $e) {
+    //         $this->fail($request, $e);
+    //     }
 
-        if (empty($contents->access_token) || empty($contents->refresh_token)) {
-            $this->fail($request, new \Exception('Missing tokens in response contents'));
-        }
+    //     if (empty($contents->access_token) || empty($contents->refresh_token)) {
+    //         $this->fail($request, new \Exception('Missing tokens in response contents'));
+    //     }
         
-        $request->session()->put('_th_azure_access_token', $contents->access_token);
-        $request->session()->put('_th_azure_refresh_token', $contents->refresh_token);
+    //     $request->session()->put('_th_azure_access_token', $contents->access_token);
+    //     $request->session()->put('_th_azure_refresh_token', $contents->refresh_token);
 
-        return $this->handlecallback($request, $next, $access_token, $refresh_token);
-    }
+    //     return $this->handlecallback($request, $next, $access_token, $refresh_token);
+    // }
 
     /**
      * Handle an incoming request in a testing environment
@@ -93,16 +99,6 @@ class Azure
     }
 
     /**
-     * Gets the azure url
-     *
-     * @return String
-     */
-    public function getAzureUrl()
-    {
-        return $this->baseUrl . config('azure.tenant_id') . $this->route2 . "authorize?response_type=code&client_id=" . config('azure.client.id') . "&domain_hint=" . urlencode(config('azure.domain_hint')) . "&scope=" . urldecode(config('azure.scope'));
-    }
-
-    /**
      * Redirects to the Azure route.  Typically used to point a web route to this method.
      * For example: Route::get('/login/azure', '\RootInc\LaravelAzureMiddleware\Azure@azure');
      *
@@ -111,7 +107,11 @@ class Azure
      */
     public function azure(Request $request)
     {
-        return redirect()->away( $this->getAzureUrl() );
+        $token = Hash::make('azure_secure' . date('Y-m-d') . url('/'));
+        // Gets the azure url
+        $endpoint_handler = new EndpointHandler($this->generic_policy);
+        $authorization_endpoint = $endpoint_handler->getAuthorizationEndpoint().'&state=generic%20'.$token;
+        return redirect()->away( $authorization_endpoint );
     }
 
     /**
@@ -134,34 +134,74 @@ class Azure
      */
     public function azurecallback(Request $request)
     {
-        $client = new Client();
-
         $code = $request->input('code');
-
-        try {
-            $response = $client->request('POST', $this->baseUrl . config('azure.tenant_id') . $this->route . "token", [
-                'form_params' => [
-                    'grant_type' => 'authorization_code',
-                    'client_id' => config('azure.client.id'),
-                    'client_secret' => config('azure.client.secret'),
-                    'code' => $code,
-                    'resource' => config('azure.resource'),
-                ]
-            ]);
-
-            $contents = json_decode($response->getBody()->getContents());
-        } catch(RequestException $e) {
-            return $this->fail($request, $e);
+        $id_token = $request->input('id_token');
+          
+        $state = explode(" ", $request->input('state')); 
+        $action = $state[0];
+        $state_cookie = $state[1];
+        if ( $code == NULL && $id_token == NULL) {
+            $exception = new \Exception('ERROR - only id_token or code supported');
+            return response()->view('errors.403', compact('exception'), 403);
+        }
+        if (Hash::check('azure_secure' . date('Y-m-d') . url('/'), $state[1]) == false) {
+            $exception = new \Exception('Missing tokens in response contents');
+            return response()->view('errors.403', compact('exception'), 403);
         }
 
-        $access_token = $contents->access_token;
-        $refresh_token = $contents->refresh_token;
-        $profile = json_decode( base64_decode( explode(".", $contents->id_token)[1]) );
+        // Check which authorization policy was used
+        if ($action == "generic") $policy = env('AZ_GENERIC_POLICY');
+        if ($action == "admin") $policy = env('AZ_ADMIN_POLICY');
+        if ($action == "edit_profile") $policy = env('AZ_EDIT_PROFILE_POLICY');
 
-        $request->session()->put('_th_azure_access_token', $access_token);
-        $request->session()->put('_th_azure_refresh_token', $refresh_token);
+        // Check the response type
+        if ($code != NULL ) {
+        $resp = $code;
+        $resp_type = "code";
+        }
+        else if ($id_token != NULL) {
+        $resp = $id_token;
+        $resp_type = "id_token";
+        }
 
-        return $this->success($request, $access_token, $refresh_token, $profile);
+        // Verify token
+        $tokenChecker = new TokenChecker($resp, $resp_type, env('AZ_CLIENT_ID'), env('AZ_CLIENT_SECRET'), $policy);
+        $verified = $tokenChecker->authenticate();
+
+        if ($verified == false) {
+            $exception = new \Exception('Token validation error');
+            return response()->view('errors.403', compact('exception'), 403);
+        }
+
+
+        // $client = new Client();
+
+        // $code = $request->input('code');
+
+        // try {
+        //     $response = $client->request('POST', $this->baseUrl . config('azure.tenant_id') . $this->route . "token", [
+        //         'form_params' => [
+        //             'grant_type' => 'authorization_code',
+        //             'client_id' => config('azure.client.id'),
+        //             'client_secret' => config('azure.client.secret'),
+        //             'code' => $code,
+        //             'resource' => config('azure.resource'),
+        //         ]
+        //     ]);
+
+        //     $contents = json_decode($response->getBody()->getContents());
+        // } catch(RequestException $e) {
+        //     return $this->fail($request, $e);
+        // }
+
+        // $access_token = $contents->access_token;
+        // $refresh_token = $contents->refresh_token;
+        // $profile = json_decode( base64_decode( explode(".", $contents->id_token)[1]) );
+
+        // $request->session()->put('_th_azure_access_token', $access_token);
+        // $request->session()->put('_th_azure_refresh_token', $refresh_token);
+
+        // return $this->success($request, $access_token, $refresh_token, $profile);
     }
 
     /**

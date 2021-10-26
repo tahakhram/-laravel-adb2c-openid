@@ -1,9 +1,12 @@
 <?php
-require_once app_path()."/Http/Controllers/AuthB2C/EndpointHandler.php";
-include 'Crypt/RSA.php';
+namespace TahaKhram\LaravelAdb2cOpenid;
+
+use TahaKhram\LaravelAdb2cOpenid\EndPointHandler;
+
 // Turn on error reporting, for debugging
 error_reporting(E_ALL);
-
+require_once base_path('vendor') . '/autoload.php'; 
+use phpseclib\Crypt\RSA;
 
 // A class to verify an id_token, following either:
 // 1. Implicit Flow (response from authorization endpoint is an ID token)
@@ -69,15 +72,17 @@ class TokenChecker {
 
 		// Split the token into Header, Payload, and Signature, and decode
 		$this->id_token_array = explode('.', $id_token);
-		$this->head = base64_decode($this->id_token_array[0]);
-		$this->payload = base64_decode($this->id_token_array[1]);
+		$this->head = json_decode(base64_decode($this->id_token_array[0]),true);
+		$this->payload = json_decode(base64_decode($this->id_token_array[1]),true);
 	}
 
 	// Validates the RSA signature on the token
 	private function validateSignature() {
 
+		var_dump($this->head);
+
 		// Get kid from header
-		$kid = getClaim("kid", $this->head);
+		$kid = $this->head["kid"];
 		// Get public key
 		$key_data = $this->endpointHandler->getJwksUriData();
 
@@ -95,6 +100,8 @@ class TokenChecker {
 		$n = $this->convert_base64url_to_base64($n_array[1]);
 
 		// Convert RSA(e,n) format to PEM format
+		var_dump(new RSA);
+// require_once base_path('vendor').'/phpseclib/phpseclib/phpseclib/Crypt/RSA.php';
 		$rsa = new Crypt_RSA();
 		$rsa->setPublicKey('<RSAKeyValue>
 			<Modulus>' . $n . '</Modulus>
@@ -113,18 +120,18 @@ class TokenChecker {
 	// Validate audience, not_before, expiration_time, and issuer claims
 	private function validateClaims() {
 
-		$audience = getClaim("aud", $this->payload); // Should be app's clientID
+		$audience = $this->payload["aud"]; // Should be app's clientID
 		if ($audience != $this->clientID) return false;
 
 		$cur_time = time();
-		$not_before = getClaim("nbf", $this->payload); // epoch time, time after which token is valid (so basically nbf < cur time < exp)
-		$expiration = getClaim("exp", $this->payload); // epoch time, check that the token is still valid
+		$not_before = $this->payload["nbf"]; // epoch time, time after which token is valid (so basically nbf < cur time < exp)
+		$expiration = $this->payload["exp"]; // epoch time, check that the token is still valid
 
 		if ($not_before > $cur_time) return false;
 		if ($cur_time > $expiration) return false;
 
 		// The Issuer Identifier for the OpenID Provider MUST exactly match the value of the iss (issuer) Claim.
-		$iss_token = getClaim("iss", $this->payload);
+		$iss_token = $this->payload["iss"];
 		$iss_metadata = $this->endpointHandler->getIssuer();
 		if ($iss_token != $iss_metadata) return false;
 
@@ -143,10 +150,6 @@ class TokenChecker {
 		return $this->payload;
 	}
 
-	// Extracts a claim from the ID token
-	public function getClaim($name) {
-		return getClaim($name, $this->payload);
-	}
 
 	// Returns the end session (aka logout) url
 	public function getEndSessionEndpoint() {
