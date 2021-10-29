@@ -79,8 +79,6 @@ class TokenChecker {
 	// Validates the RSA signature on the token
 	private function validateSignature() {
 
-		var_dump($this->head);
-
 		// Get kid from header
 		$kid = $this->head["kid"];
 		// Get public key
@@ -100,19 +98,19 @@ class TokenChecker {
 		$n = $this->convert_base64url_to_base64($n_array[1]);
 
 		// Convert RSA(e,n) format to PEM format
-		var_dump(new RSA);
-// require_once base_path('vendor').'/phpseclib/phpseclib/phpseclib/Crypt/RSA.php';
-		$rsa = new Crypt_RSA();
-		$rsa->setPublicKey('<RSAKeyValue>
-			<Modulus>' . $n . '</Modulus>
-			<Exponent>' . $e . '</Exponent>
-			</RSAKeyValue>');
-		$public_key = $rsa->getPublicKey();
+		
+		$rsa = new RSA();
+
+		$key = "<RSAKeyPair>"
+		. "<Modulus>" . $n . "</Modulus>"
+		. "<Exponent>" . $e . "</Exponent>"
+		. "</RSAKeyPair>";
+		$rsa->loadKey($key, RSA::PUBLIC_FORMAT_XML);
 
 		// Verify Signature
 		$to_verify_data = $this->id_token_array[0] . "." . $this->id_token_array[1];
 		$to_verify_sig = base64_decode($this->convert_base64url_to_base64(($this->id_token_array[2])));
-		$verified = openssl_verify($to_verify_data, $to_verify_sig, $public_key, OPENSSL_ALGO_SHA256);
+		$verified = openssl_verify($to_verify_data, $to_verify_sig, $rsa, OPENSSL_ALGO_SHA256);
 
 		return $verified;
 	}

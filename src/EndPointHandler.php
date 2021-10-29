@@ -27,7 +27,6 @@ class EndPointHandler {
     return file_get_contents($uri);
   }
 
-
   // Obtains the authorization endpoint from the metadata
   // and adds the necessary query arguments
   public function getAuthorizationEndpoint() {
@@ -40,7 +39,6 @@ class EndPointHandler {
                                             '&prompt=login';
     return $authorization_endpoint;
   }
-
 
   // Using a HTTP POST request, sends data to the endpoint and receives the response
   public function postEndpointData($uri, $postdata) {
@@ -81,8 +79,6 @@ class EndPointHandler {
         );
   }
 
-
-
   // Returns the value of the issuer claim from the metadata
   public function getIssuer() {
     return $this->metadata['issuer'];
@@ -99,8 +95,6 @@ class EndPointHandler {
     $key_data = $this->getEndpointData($jwks_uri);
     return $key_data;
   }
-
-
 
   // Obtains the end session endpoint from the metadata
   // and adds the necessary query arguments
